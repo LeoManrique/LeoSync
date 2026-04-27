@@ -33,13 +33,46 @@ case "$OS" in
 esac
 success "Platform: $PLATFORM"
 
-# ── Step 2: Check if LeoSync is running ──
-step 2 "Checking for running instances"
+# ── Step 2: Stop running app + daemon ──
+# The daemon (`leosyncd`) is a long-lived process spawned by the GUI, so
+# replacing the binaries on disk does NOT update the running code. If it
+# keeps running across an upgrade it serves stale logic until killed — and
+# things like the OAuth client credentials live in memory, so a fresh login
+# against a stale daemon writes the old auth.json schema and the bug fix
+# in the new release never takes effect.
+step 2 "Stopping running app + daemon"
 
-if pgrep -x "LeoSync" >/dev/null 2>&1 || pgrep -x "leosync" >/dev/null 2>&1; then
-  error "LeoSync is currently running. Please close it before installing/updating."
+PROCS=(LeoSync leosync leosyncd)
+RUNNING=()
+for p in "${PROCS[@]}"; do
+  if pgrep -x "$p" >/dev/null 2>&1; then RUNNING+=("$p"); fi
+done
+
+if [ ${#RUNNING[@]} -eq 0 ]; then
+  success "No running instances"
+else
+  for p in "${RUNNING[@]}"; do
+    pkill -TERM -x "$p" 2>/dev/null || true
+  done
+
+  # Up to 8s for graceful exit; the daemon handles SIGTERM cleanly.
+  for _ in $(seq 1 16); do
+    STILL=()
+    for p in "${RUNNING[@]}"; do
+      if pgrep -x "$p" >/dev/null 2>&1; then STILL+=("$p"); fi
+    done
+    [ ${#STILL[@]} -eq 0 ] && break
+    sleep 0.5
+  done
+
+  for p in "${RUNNING[@]}"; do
+    if pgrep -x "$p" >/dev/null 2>&1; then
+      warn "Force-killing $p (graceful stop timed out)"
+      pkill -KILL -x "$p" 2>/dev/null || true
+    fi
+  done
+  success "Stopped: ${RUNNING[*]}"
 fi
-success "No running instances found"
 
 # ── Step 3: Fetch latest release ──
 step 3 "Fetching latest release from GitHub"
@@ -87,8 +120,12 @@ case "$OS" in
     ;;
   linux)
     tar -xzf "$TMP_DIR/$ARTIFACT" -C "$TMP_DIR"
-    sudo install -Dm755 "$TMP_DIR/LeoSync" "/usr/local/bin/leosync"
-    success "Installed binary to /usr/local/bin/leosync"
+    # All three binaries land in the same dir so the GUI's
+    # LocateDaemonBinary() finds leosyncd/leosync-cli next to itself.
+    sudo install -Dm755 "$TMP_DIR/LeoSync"     "/usr/local/bin/leosync"
+    sudo install -Dm755 "$TMP_DIR/leosyncd"    "/usr/local/bin/leosyncd"
+    sudo install -Dm755 "$TMP_DIR/leosync-cli" "/usr/local/bin/leosync-cli"
+    success "Installed leosync, leosyncd, leosync-cli to /usr/local/bin/"
 
     # Desktop entry
     sudo tee "/usr/share/applications/leosync.desktop" > /dev/null <<EOF
