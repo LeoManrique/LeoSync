@@ -120,12 +120,11 @@ case "$OS" in
     ;;
   linux)
     tar -xzf "$TMP_DIR/$ARTIFACT" -C "$TMP_DIR"
-    # All three binaries land in the same dir so the GUI's
-    # LocateDaemonBinary() finds leosyncd/leosync-cli next to itself.
-    sudo install -Dm755 "$TMP_DIR/LeoSync"     "/usr/local/bin/leosync"
-    sudo install -Dm755 "$TMP_DIR/leosyncd"    "/usr/local/bin/leosyncd"
-    sudo install -Dm755 "$TMP_DIR/leosync-cli" "/usr/local/bin/leosync-cli"
-    success "Installed leosync, leosyncd, leosync-cli to /usr/local/bin/"
+    # Both binaries land in the same dir so the GUI's LocateDaemonBinary()
+    # finds leosyncd next to itself. (The Rust port dropped leosync-cli.)
+    sudo install -Dm755 "$TMP_DIR/leosync"  "/usr/local/bin/leosync"
+    sudo install -Dm755 "$TMP_DIR/leosyncd" "/usr/local/bin/leosyncd"
+    success "Installed leosync, leosyncd to /usr/local/bin/"
 
     # Desktop entry
     sudo tee "/usr/share/applications/leosync.desktop" > /dev/null <<EOF
